@@ -209,70 +209,78 @@ public abstract class AuthConfigFactory
       if (sm != null)
          sm.checkPermission(getFactorySecurityPermission);
 
-      if (_factory == null)
-      {
-          if (sm != null)
-              sm.checkPermission(setFactorySecurityPermission);
+      //Avoid synchronization if the _factory object has already been initialized
+      if(_factory != null) 
+    	   return _factory;
 
-         String factoryName = null;
-         Class clazz = null;
-         try
+      //Otherwise make sure that only one thread initializes the object
+      synchronized(AuthConfigFactory.class)
+      {
+         if (_factory == null)
          {
-            LoadAction action = new LoadAction();
+            if (sm != null)
+               sm.checkPermission(setFactorySecurityPermission);
+
+            String factoryName = null;
+            Class clazz = null;
             try
             {
-               clazz = (Class) AccessController.doPrivileged(action);
-               factoryName = action.getName();
+               LoadAction action = new LoadAction();
+               try
+               {
+                  clazz = (Class) AccessController.doPrivileged(action);
+                  factoryName = action.getName();
+               }
+               catch (PrivilegedActionException ex)
+               {
+                  factoryName = action.getName();
+                  Exception e = ex.getException();
+                  if (e instanceof ClassNotFoundException)
+                     throw (ClassNotFoundException) e;
+                  else
+                     throw new IllegalStateException("Failure during load of class: " + action.getName() + e);
+               }
+               _factory = (AuthConfigFactory) clazz.newInstance();
             }
-            catch (PrivilegedActionException ex)
+            catch (ClassNotFoundException e)
             {
-               factoryName = action.getName();
-               Exception e = ex.getException();
-               if (e instanceof ClassNotFoundException)
-                  throw (ClassNotFoundException) e;
-               else
-                  throw new IllegalStateException("Failure during load of class: " + action.getName() + e);
+               String msg = "Failed to find AuthConfigFactory : " + factoryName;
+               IllegalStateException ise = new IllegalStateException(msg);
+               ise.initCause(e);
+               throw ise;
             }
-            _factory = (AuthConfigFactory) clazz.newInstance();
+            catch (IllegalAccessException e)
+            {
+               String msg = "Unable to access class : " + factoryName;
+               IllegalStateException ise = new IllegalStateException(msg);
+               ise.initCause(e);
+               throw ise;
+            }
+            catch (InstantiationException e)
+            {
+               String msg = "Failed to create instance of: " + factoryName;
+               IllegalStateException ise = new IllegalStateException(msg);
+               ise.initCause(e);
+               throw ise;
+            }
+            catch (ClassCastException e)
+            {
+               StringBuffer msg = new StringBuffer(factoryName + " Is not a AuthConfigFactory, ");
+               msg.append("ACF.class.CL: "+ AuthConfigFactory.class.getClassLoader());
+               msg.append("\nACF.class.CS: " + AuthConfigFactory.class.getProtectionDomain().getCodeSource());
+               msg.append("\nACF.class.hash: "+System.identityHashCode(AuthConfigFactory.class));
+               msg.append("\nclazz.CL: "+clazz.getClassLoader());
+               msg.append("\nclazz.CS: "+clazz.getProtectionDomain().getCodeSource());
+               msg.append("\nclazz.super.CL: "+clazz.getSuperclass().getClassLoader());
+               msg.append("\nclazz.super.CS: "+clazz.getSuperclass().getProtectionDomain().getCodeSource());
+               msg.append("\nclazz.super.hash: "+System.identityHashCode(clazz.getSuperclass()));
+               ClassCastException cce = new ClassCastException(msg.toString());
+               cce.initCause(e);
+               throw cce;
+            }
          }
-         catch (ClassNotFoundException e)
-         {
-            String msg = "Failed to find AuthConfigFactory : " + factoryName;
-            IllegalStateException ise = new IllegalStateException(msg);
-            ise.initCause(e);
-            throw ise;
-         }
-         catch (IllegalAccessException e)
-         {
-            String msg = "Unable to access class : " + factoryName;
-            IllegalStateException ise = new IllegalStateException(msg);
-            ise.initCause(e);
-            throw ise;
-         }
-         catch (InstantiationException e)
-         {
-            String msg = "Failed to create instance of: " + factoryName;
-            IllegalStateException ise = new IllegalStateException(msg);
-            ise.initCause(e);
-            throw ise;
-         }
-         catch (ClassCastException e)
-         {
-            StringBuffer msg = new StringBuffer(factoryName + " Is not a AuthConfigFactory, ");
-            msg.append("ACF.class.CL: "+ AuthConfigFactory.class.getClassLoader());
-            msg.append("\nACF.class.CS: " + AuthConfigFactory.class.getProtectionDomain().getCodeSource());
-            msg.append("\nACF.class.hash: "+System.identityHashCode(AuthConfigFactory.class));
-            msg.append("\nclazz.CL: "+clazz.getClassLoader());
-            msg.append("\nclazz.CS: "+clazz.getProtectionDomain().getCodeSource());
-            msg.append("\nclazz.super.CL: "+clazz.getSuperclass().getClassLoader());
-            msg.append("\nclazz.super.CS: "+clazz.getSuperclass().getProtectionDomain().getCodeSource());
-            msg.append("\nclazz.super.hash: "+System.identityHashCode(clazz.getSuperclass()));
-            ClassCastException cce = new ClassCastException(msg.toString());
-            cce.initCause(e);
-            throw cce;
-         }
+         return _factory;
       }
-      return _factory;
    }
 
    /**
